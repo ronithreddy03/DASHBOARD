@@ -145,6 +145,8 @@ def build_corrected_summary(df, results):
     summary = [
         f"We analyzed {n:,} user sessions to understand how time spent on a page relates to revenue.",
         "Through exploratory data analysis (EDA) and statistical modeling, the results reveal a complex relationship that defies simple patterns.",
+        "The data shows that user behavior isn't as straightforward as you might expect - there are multiple patterns at play here.",
+        "Some users convert quickly while others take their time, and this creates an interesting statistical puzzle.",
         "",
         "",
         "Q1: What's the relationship between Time on Page and Revenue?",
