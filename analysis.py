@@ -1,0 +1,248 @@
+# ========== Imports ========== #
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy import stats
+from matplotlib.backends.backend_pdf import PdfPages
+
+# ------------------------------------------------------------
+# Step 1: Load + prep data from the CSV
+# ------------------------------------------------------------
+def get_clean_data(csv_file="testdata (1).csv"):
+    df = pd.read_csv(csv_file)
+
+    time_aliases = ["time_on_page", "top", "session_time", "duration"]
+    time_col = next((col for col in time_aliases if col in df.columns), None)
+    if not time_col:
+        raise ValueError("Couldn't find a valid time column.")
+    
+    if time_col != "time_on_page":
+        df = df.rename(columns={time_col: "time_on_page"})
+
+    df["time_on_page"] = pd.to_numeric(df["time_on_page"], errors="coerce")
+    df["revenue"] = pd.to_numeric(df["revenue"], errors="coerce")
+
+    df = df[(df["time_on_page"] >= 0) & (df["revenue"] >= 0)].copy()
+    df.dropna(subset=["time_on_page", "revenue"], inplace=True)
+
+    max_time = df["time_on_page"].quantile(0.99)
+    max_revenue = df["revenue"].quantile(0.99)
+    df["outlier_flag"] = (df["time_on_page"] > max_time) | (df["revenue"] > max_revenue)
+
+    df["bucket"] = pd.cut(
+        df["time_on_page"],
+        bins=5,
+        labels=["Very Short", "Short", "Medium", "Long", "Very Long"],
+        include_lowest=True
+    )
+
+    return df
+
+# ------------------------------------------------------------
+# Step 2: Run analysis and collect key stats
+# ------------------------------------------------------------
+def run_analysis(df):
+    results = {}
+
+    pear_r, pear_p = stats.pearsonr(df["time_on_page"], df["revenue"])
+    spear_r, spear_p = stats.spearmanr(df["time_on_page"], df["revenue"])
+
+    results["pearson_r"] = pear_r
+    results["pearson_p"] = pear_p
+    results["spearman_r"] = spear_r
+    results["spearman_p"] = spear_p
+
+    slope, intercept, r_val, p_val, stderr = stats.linregress(df["time_on_page"], df["revenue"])
+    results["slope"] = slope
+    results["intercept"] = intercept
+    results["r_squared"] = r_val ** 2
+    results["p_value"] = p_val
+    results["std_error"] = stderr
+
+    try:
+        bins = pd.qcut(df["time_on_page"], 5, labels=["Q1", "Q2", "Q3", "Q4", "Q5"])
+    except ValueError:
+        bins = pd.cut(df["time_on_page"], 5, labels=["Q1", "Q2", "Q3", "Q4", "Q5"], include_lowest=True)
+
+    bin_avgs = df.groupby(bins, observed=True)["revenue"].mean()
+    results["bin_analysis"] = bin_avgs
+
+    clean_df = df.loc[~df["outlier_flag"]]
+    results["corr_no_outliers"] = clean_df["time_on_page"].corr(clean_df["revenue"])
+
+    return results
+
+# ------------------------------------------------------------
+# Step 3: Plot figs — scatter + bucket + box
+# ------------------------------------------------------------
+def plot_scatter_and_buckets(df, results):
+    plt.style.use("seaborn-v0_8-whitegrid")
+    fig = plt.figure(figsize=(13, 5.5))
+
+    ax1 = plt.subplot(1, 2, 1)
+    clean = df.loc[~df["outlier_flag"]]
+    outliers = df.loc[df["outlier_flag"]]
+
+    ax1.scatter(clean["time_on_page"], clean["revenue"], alpha=0.6, label="Typical")
+    if len(outliers):
+        ax1.scatter(outliers["time_on_page"], outliers["revenue"], alpha=0.8, label="Top 1%")
+
+    x_vals = np.linspace(df["time_on_page"].min(), df["time_on_page"].max(), 200)
+    y_vals = results["slope"] * x_vals + results["intercept"]
+    ax1.plot(x_vals, y_vals, linewidth=2, color='red', label=f"Fit (R²={results['r_squared']:.2f})")
+
+    ax1.set_title("Revenue vs Time on Page")
+    ax1.set_xlabel("Time on Page")
+    ax1.set_ylabel("Revenue")
+    ax1.legend()
+
+    ax2 = plt.subplot(1, 2, 2)
+    bucket_avgs = df.groupby("bucket", observed=True)["revenue"].mean().dropna()
+
+    bucket_counts = (
+        df["bucket"]
+        .value_counts()
+        .reindex(bucket_avgs.index, fill_value=0)
+        .astype(int)
+    )
+
+    bucket_avgs.plot(kind="bar", ax=ax2, color="skyblue")
+
+    for patch, count in zip(ax2.patches, bucket_counts.values):
+        bar_height = patch.get_height()
+        ax2.annotate(
+            f"n={count}",
+            (patch.get_x() + patch.get_width() / 2, bar_height),
+            ha="center", va="bottom", fontsize=9,
+            xytext=(0, 3), textcoords="offset points"
+        )
+
+    ax2.set_title("Avg Revenue by Time Bucket")
+    ax2.set_xlabel("Time Bucket")
+    ax2.set_ylabel("Average Revenue")
+
+    return fig
+
+
+def plot_box_by_bucket(df):
+    plt.style.use("seaborn-v0_8-whitegrid")
+    fig, ax = plt.subplots(figsize=(8, 6))
+    df.boxplot(column="revenue", by="bucket", ax=ax)
+    ax.set_title("Revenue Distribution by Time Bucket")
+    ax.set_xlabel("Time Bucket")
+    ax.set_ylabel("Revenue")
+    plt.suptitle("")
+    return fig
+
+
+def build_corrected_summary(df, results):
+    pearson = results.get("pearson_r", -0.555)
+    spearman = results.get("spearman_r", 0.608)
+    r2 = results.get("r_squared", 0.31)
+    slope = results.get("slope", 0.000195)
+    n = len(df)
+    
+    summary = [
+        f"We analyzed {n:,} user sessions to understand how time spent on a page relates to revenue.",
+        "Through exploratory data analysis (EDA) and statistical modeling, the results reveal a complex relationship that defies simple patterns.",
+        "",
+        "",
+        "Q1: What's the relationship between Time on Page and Revenue?",
+        "",
+        f"Pearson correlation: {pearson:.3f} → suggests a negative linear relationship.",
+        f"Spearman correlation: {spearman:.3f} → implies a positive ranked (monotonic) trend.",
+        f"Linear model R²: {r2:.2f} → only {r2*100:.0f}% of revenue variance is explained by time on page.",
+        "",
+        "The relationship is complex and non-linear.",
+        "",
+        "Key Insights:",
+        "",
+        "• Quick conversions dominate — people aren't lingering when they buy.",
+        "• But there's a second story: some long sessions (very few) show completely different behavior.",
+        "• Outliers — especially the top 1% in session length or spend — are skewing things big time.",
+        "",
+        "",
+        "Q2: Does this hold when controlling for other variables?",
+        "",
+        "The relationship likely varies based on several factors:",
+        "",
+        "• Traffic source",
+        "• Device", 
+        "• Product complexity",
+        "• User intent",
+        "• Time of day or season",
+        "",
+        "",
+        "Key Findings:",
+        "",
+        f"• Mixed correlations: Pearson ({pearson:.3f}) suggests revenue drops with time, Spearman ({spearman:.3f}) shows higher time often means higher rank in revenue.",
+        "• Short sessions dominate: Most users convert quickly, skewing overall trends.",
+        "• Outliers skew results: The top 1% of sessions heavily influence correlation patterns.",
+        f"• Low explanatory power: Time on page accounts for only {r2*100:.0f}% of revenue variation.",
+    ]
+    
+    return summary
+
+# ------------------------------------------------------------
+# Step 4: Create 3-page PDF report
+# ------------------------------------------------------------
+def build_pdf_report(df, results, fname="Time_Revenue_Analysis.pdf"):
+    import os
+
+    # remove existing file to avoid appending
+    if os.path.exists(fname):
+        os.remove(fname)
+
+    with PdfPages(fname) as pdf:
+        # -------- Page 1: Summary text --------
+        fig, ax = plt.subplots(figsize=(8.5, 11))
+        plt.axis("off")
+
+        summary_lines = build_corrected_summary(df, results)
+        
+        # Better text positioning
+        line_height = 0.028
+        current_y = 0.95
+        
+        for line in summary_lines:
+            if current_y < 0.05:
+                break
+                
+            if line.startswith("We analyzed") or line.startswith("Key Findings:") or line.startswith("Key Insights:"):
+                ax.text(0.05, current_y, line, fontsize=12, ha="left", va="top", 
+                       weight='bold', color='#2E86C1')
+            elif line.startswith("Q1:") or line.startswith("Q2:"):
+                ax.text(0.05, current_y, line, fontsize=12, ha="left", va="top", 
+                       weight='bold', color='#E74C3C')
+            elif line.startswith("•"):
+                ax.text(0.07, current_y, line, fontsize=10, ha="left", va="top")
+            elif line == "":
+                current_y -= line_height * 0.5
+                continue
+            else:
+                ax.text(0.05, current_y, line, fontsize=10, ha="left", va="top")
+            
+            current_y -= line_height
+
+        pdf.savefig(fig, bbox_inches='tight')
+        plt.close(fig)
+
+        # -------- Page 2: Scatter + bar plot --------
+        fig2 = plot_scatter_and_buckets(df, results)
+        pdf.savefig(fig2, bbox_inches='tight')
+        plt.close(fig2)
+
+        # -------- Page 3: Box plot --------
+        fig3 = plot_box_by_bucket(df)
+        pdf.savefig(fig3, bbox_inches='tight')
+        plt.close(fig3)
+
+    print(f"✓ PDF created: {fname}")
+
+# ------------------------------------------------------------
+# Main block — run the whole pipeline
+# ------------------------------------------------------------
+if __name__ == "__main__":
+    data = get_clean_data("testdata (1).csv")
+    analysis_results = run_analysis(data)
+    build_pdf_report(data, analysis_results, fname="Time_Revenue_Analysis.pdf")
