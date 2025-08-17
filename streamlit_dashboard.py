@@ -164,23 +164,32 @@ with col1:
     )
     
     # Plot 3: Q-Q plot
-    theoretical_quantiles = stats.probplot(x_original, dist="norm", plot=None)
-    if len(theoretical_quantiles) >= 2 and len(theoretical_quantiles[0]) > 0 and len(theoretical_quantiles[1]) > 0:
-        fig.add_trace(
-            go.Scatter(x=theoretical_quantiles[0], y=theoretical_quantiles[1], 
-                      mode='markers', name="Q-Q Plot", marker_color='red'),
-            row=2, col=1
-        )
+    try:
+        theoretical_quantiles = stats.probplot(x_original, dist="norm", plot=None)
+    except:
+        theoretical_quantiles = None
+    try:
+        if len(theoretical_quantiles) >= 2 and len(theoretical_quantiles[0]) > 0 and len(theoretical_quantiles[1]) > 0:
+            fig.add_trace(
+                go.Scatter(x=theoretical_quantiles[0], y=theoretical_quantiles[1], 
+                          mode='markers', name="Q-Q Plot", marker_color='red'),
+                row=2, col=1
+            )
+    except:
+        pass  # Skip Q-Q plot if there's an error
     
     # Add diagonal line for Q-Q plot
-    if len(theoretical_quantiles) >= 2 and len(theoretical_quantiles[0]) > 0 and len(theoretical_quantiles[1]) > 0:
-        min_val = min(theoretical_quantiles[0].min(), theoretical_quantiles[1].min())
-        max_val = max(theoretical_quantiles[0].max(), theoretical_quantiles[1].max())
-        fig.add_trace(
-            go.Scatter(x=[min_val, max_val], y=[min_val, max_val], 
-                      mode='lines', name="Perfect Fit", line=dict(color='black', dash='dash')),
-            row=2, col=1
-        )
+    try:
+        if len(theoretical_quantiles) >= 2 and len(theoretical_quantiles[0]) > 0 and len(theoretical_quantiles[1]) > 0:
+            min_val = min(theoretical_quantiles[0].min(), theoretical_quantiles[1].min())
+            max_val = max(theoretical_quantiles[0].max(), theoretical_quantiles[1].max())
+            fig.add_trace(
+                go.Scatter(x=[min_val, max_val], y=[min_val, max_val], 
+                          mode='lines', name="Perfect Fit", line=dict(color='black', dash='dash')),
+                row=2, col=1
+            )
+    except:
+        pass  # Skip diagonal line if there's an error
     
     # Plot 4: Histogram with theoretical PDF
     fig.add_trace(
