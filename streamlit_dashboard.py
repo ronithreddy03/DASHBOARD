@@ -165,20 +165,22 @@ with col1:
     
     # Plot 3: Q-Q plot
     theoretical_quantiles = stats.probplot(x_original, dist="norm", plot=None)
-    fig.add_trace(
-        go.Scatter(x=theoretical_quantiles[0], y=theoretical_quantiles[1], 
-                  mode='markers', name="Q-Q Plot", marker_color='red'),
-        row=2, col=1
-    )
+    if len(theoretical_quantiles) >= 2 and len(theoretical_quantiles[0]) > 0 and len(theoretical_quantiles[1]) > 0:
+        fig.add_trace(
+            go.Scatter(x=theoretical_quantiles[0], y=theoretical_quantiles[1], 
+                      mode='markers', name="Q-Q Plot", marker_color='red'),
+            row=2, col=1
+        )
     
     # Add diagonal line for Q-Q plot
-    min_val = min(theoretical_quantiles[0].min(), theoretical_quantiles[1].min())
-    max_val = max(theoretical_quantiles[0].max(), theoretical_quantiles[1].max())
-    fig.add_trace(
-        go.Scatter(x=[min_val, max_val], y=[min_val, max_val], 
-                  mode='lines', name="Perfect Fit", line=dict(color='black', dash='dash')),
-        row=2, col=1
-    )
+    if len(theoretical_quantiles) >= 2 and len(theoretical_quantiles[0]) > 0 and len(theoretical_quantiles[1]) > 0:
+        min_val = min(theoretical_quantiles[0].min(), theoretical_quantiles[1].min())
+        max_val = max(theoretical_quantiles[0].max(), theoretical_quantiles[1].max())
+        fig.add_trace(
+            go.Scatter(x=[min_val, max_val], y=[min_val, max_val], 
+                      mode='lines', name="Perfect Fit", line=dict(color='black', dash='dash')),
+            row=2, col=1
+        )
     
     # Plot 4: Histogram with theoretical PDF
     fig.add_trace(
@@ -187,12 +189,15 @@ with col1:
         row=2, col=2
     )
     
-    if theoretical_pdf is not None:
-        fig.add_trace(
-            go.Scatter(x=x_range, y=theoretical_pdf * len(x_original) * (max(x_original) - min(x_original)) / 30,
-                      mode='lines', name="Theoretical PDF", line=dict(color='red', width=2)),
-            row=2, col=2
-        )
+    if theoretical_pdf is not None and len(theoretical_pdf) > 0:
+        try:
+            fig.add_trace(
+                go.Scatter(x=x_range, y=theoretical_pdf * len(x_original) * (max(x_original) - min(x_original)) / 30,
+                          mode='lines', name="Theoretical PDF", line=dict(color='red', width=2)),
+                row=2, col=2
+            )
+        except:
+            pass  # Skip if there's an error with theoretical PDF
     
     # Update layout
     fig.update_layout(
